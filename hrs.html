@@ -1,0 +1,1196 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bitácora de Horas - Mejorada</title>
+
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <!-- Bootstrap Icons & FontAwesome -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet" />
+  <!-- DataTables (for the All Activities table) -->
+  <link href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css" rel="stylesheet" />
+  <!-- SheetJS para exportar XLSX -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Chart.js para gráficas -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <style>
+    :root{ --accent:#4a90e2; --success:#28a745; }
+    body{ background:#f5f7fa; }
+    .calendar-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+    .day-header{ background:#333; color:#fff; padding:10px 6px; border-radius:6px; text-align:center; font-weight:600; }
+    .day-cell{ background:#fff; min-height:100px; padding:8px; border-radius:6px; cursor:pointer; display:flex; flex-direction:column; justify-content:flex-start; position:relative; }
+    .day-cell.other-month{ background:#f8f9fa; color:#9aa0a6; }
+    .day-cell.today{ background:var(--accent); color:#fff; font-weight:700; }
+    .day-cell.has-activity{ border-left:4px solid var(--success); background:#f6fff6; }
+    .day-cell.selected{ box-shadow: 0 0 0 3px rgba(74,144,226,0.5); }
+    .day-number{ font-weight:700; margin-bottom:4px; }
+    .activity-dots{ display:flex; flex-wrap:wrap; gap:2px; margin-top:auto; }
+    .activity-dot{ width:8px; height:8px; border-radius:50%; }
+    .activity-summary{ font-size:0.7rem; color:#666; margin-top:2px; }
+    .sidebar-scroll{ max-height:70vh; overflow:auto; }
+    .type-badge{ font-size:0.75rem; }
+    .toolbar .btn{ min-width:42px; }
+    .form-section{ border:1px solid #e9ecef; padding:16px; border-radius:6px; margin-bottom:12px; background:#fff; }
+    .section-title{ font-weight:600; color:#333; margin-bottom:10px; }
+    .activity-card{ border-left: 4px solid #dee2e6; }
+    .activity-card.desarrollo{ border-left-color: #4f46e5; }
+    .activity-card.reunion{ border-left-color: #0ea5a4; }
+    .activity-card.documentacion{ border-left-color: #6b7280; }
+    .activity-card.testing{ border-left-color: #f59e0b; }
+    .activity-card.planificacion{ border-left-color: #111827; }
+    .activity-card.capacitacion{ border-left-color: #16a34a; }
+    .activity-card.soporte{ border-left-color: #dc2626; }
+    .activity-card.otro{ border-left-color: #94a3b8; }
+    @media (max-width:767px){ .day-cell{ min-height:80px; } }
+  </style>
+</head>
+<body>
+  <div class="container py-4">
+    <div class="card shadow-sm">
+      <div class="card-header bg-primary text-white">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <h3 class="mb-0"><i class="bi bi-journal-check me-2"></i>Bitácora de Horas</h3>
+            <small>Gestión de actividades diarias mejorada</small>
+          </div>
+          <div class="text-end d-flex gap-2 align-items-center">
+            <button class="btn btn-outline-light btn-sm" id="btnResetData" title="Reiniciar datos"><i class="bi bi-arrow-clockwise me-1"></i>Reset</button>
+            <button class="btn btn-outline-light btn-sm" id="btnLoadSampleData" title="Cargar datos de ejemplo"><i class="bi bi-database me-1"></i>Ejemplo</button>
+            <div class="btn-group btn-group-sm me-2" role="group">
+              <button class="btn btn-light" id="btnExportXlsx" title="Exportar XLSX"><i class="fa-solid fa-file-excel"></i></button>
+              <button class="btn btn-light" id="btnExportCsv" title="Exportar CSV"><i class="fa-solid fa-file-csv"></i></button>
+              <button class="btn btn-light" id="btnExportJson" title="Exportar JSON"><i class="fa-solid fa-file-lines"></i></button>
+            </div>
+            <input type="file" id="fileJsonInput" accept="application/json" style="display:none" />
+            <button class="btn btn-light btn-sm" id="btnImportJson" title="Importar JSON"><i class="bi bi-file-arrow-up"></i></button>
+            <button class="btn btn-outline-light btn-sm" id="btnOpenHistory" title="Historial"><i class="bi bi-clock-history me-1"></i>Historial</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-lg-8">
+
+            <div class="mb-3 d-flex justify-content-between align-items-center">
+              <div class="d-flex gap-2 align-items-center">
+                <button class="btn btn-outline-primary" id="prevMonth" aria-label="Mes anterior">‹</button>
+                <h4 id="monthYear" class="mb-0 mx-2"></h4>
+                <button class="btn btn-outline-primary" id="nextMonth" aria-label="Mes siguiente">›</button>
+              </div>
+
+              <div class="d-flex gap-3 align-items-center text-center">
+                <div>
+                  <div class="fw-bold" id="totalHours">0</div>
+                  <div class="text-muted small">Horas Totales</div>
+                </div>
+                <div>
+                  <div class="fw-bold" id="testingHours">0</div>
+                  <div class="text-muted small">Horas Testing</div>
+                </div>
+                <div>
+                  <div class="fw-bold" id="testingPct">0%</div>
+                  <div class="text-muted small">% Testing</div>
+                </div>
+                <div>
+                  <div class="fw-bold" id="totalActivities">0</div>
+                  <div class="text-muted small">Actividades</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="calendar-grid mb-3" id="calendar"></div>
+
+            <div class="d-flex gap-2">
+              <button class="btn btn-outline-secondary" id="btnViewAll"><i class="bi bi-list-ul me-1"></i>Ver todas</button>
+            </div>
+
+          </div>
+
+          <div class="col-lg-4">
+            <div class="card sidebar-scroll p-3">
+              <!-- Sección: Información de Tarea de proyecto -->
+              <div class="form-section">
+                <div class="section-title">Información de Tarea de proyecto</div>
+                <div class="row g-2 align-items-center">
+                  <div class="col-4 text-end"><label class="mb-0" for="taskName">Nombre de la Tarea</label></div>
+                  <div class="col-8"><input id="taskName" class="form-control" placeholder="Nombre de la tarea" /></div>
+
+                  <div class="col-4 text-end"><label class="mb-0" for="projectSearch">Proyecto</label></div>
+                  <div class="col-8">
+                    <select id="projectSearch" class="form-select">
+                      <option value="">Seleccionar proyecto</option>
+                      <option value="Sistema ERP">Sistema ERP</option>
+                      <option value="App Móvil">App Móvil</option>
+                      <option value="Portal Web">Portal Web</option>
+                      <option value="API Backend">API Backend</option>
+                      <option value="Dashboard Analytics">Dashboard Analytics</option>
+                      <option value="Sistema Facturación">Sistema Facturación</option>
+                    </select>
+                  </div>
+
+                  <div class="col-4 text-end"><label class="mb-0" for="assignee">Asignado a</label></div>
+                  <div class="col-8">
+                    <select id="assignee" class="form-select">
+                      <option value="Juan Pérez">Juan Pérez</option>
+                      <option value="María González">María González</option>
+                      <option value="Carlos Rodriguez">Carlos Rodriguez</option>
+                      <option value="Ana Martínez">Ana Martínez</option>
+                      <option value="Luis Morales">Luis Morales</option>
+                    </select>
+                  </div>
+
+                  <div class="col-4 text-end"><label class="mb-0" for="jiraId">JIRA ID</label></div>
+                  <div class="col-8"><input id="jiraId" class="form-control" placeholder="PROJ-1234" /></div>
+
+                  <div class="col-4 text-end"><label class="mb-0" for="sprint">Sprint</label></div>
+                  <div class="col-8"><input id="sprint" class="form-control" placeholder="Sprint 15" /></div>
+                </div>
+              </div>
+
+              <!-- Sección: Registro de actividad (FECHA / HORAS / TIPO) -->
+              <div class="form-section">
+                <div class="section-title">Registro de actividad</div>
+                <div class="row g-2 align-items-center">
+                  <div class="col-5 text-end"><label class="mb-0" for="activityDate">Fecha</label></div>
+                  <div class="col-7"><input id="activityDate" type="date" class="form-control" /></div>
+
+                  <div class="col-5 text-end"><label class="mb-0" for="startTime">Inicio</label></div>
+                  <div class="col-7"><input id="startTime" type="time" class="form-control" /></div>
+
+                  <div class="col-5 text-end"><label class="mb-0" for="endTime">Fin</label></div>
+                  <div class="col-7"><input id="endTime" type="time" class="form-control" /></div>
+
+                  <div class="col-5 text-end"><label class="mb-0" for="activityType">Tipo</label></div>
+                  <div class="col-7">
+                    <select id="activityType" class="form-select">
+                      <option value="desarrollo">Desarrollo</option>
+                      <option value="reunion">Reunión</option>
+                      <option value="documentacion">Documentación</option>
+                      <option value="testing">Testing</option>
+                      <option value="planificacion">Planificación</option>
+                      <option value="capacitacion">Capacitación</option>
+                      <option value="soporte">Soporte</option>
+                      <option value="otro">Otro</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Sección: Información específica -->
+              <div class="form-section">
+                <div class="section-title">Información específica</div>
+                <div class="row g-2 align-items-center">
+                  <div class="col-5 text-end"><label class="mb-0" for="progress">Progreso</label></div>
+                  <div class="col-7">
+                    <select id="progress" class="form-select">
+                      <option value="0">0%</option>
+                      <option value="10">10%</option>
+                      <option value="25">25%</option>
+                      <option value="50">50%</option>
+                      <option value="75">75%</option>
+                      <option value="100">100%</option>
+                    </select>
+                  </div>
+
+                  <div class="col-5 text-end"><label class="mb-0" for="hoursWorked">Horas estimadas</label></div>
+                  <div class="col-7"><input id="hoursWorked" type="number" min="0" step="0.25" class="form-control" placeholder="Horas" /></div>
+
+                  <div class="col-5 text-end"><label class="mb-0" for="startDateTask">Fecha de inicio</label></div>
+                  <div class="col-7"><input id="startDateTask" type="date" class="form-control" /></div>
+                </div>
+              </div>
+
+              <!-- Sección: Descripción -->
+              <div class="form-section">
+                <div class="section-title">Descripción</div>
+                <div>
+                  <textarea id="taskDescription" rows="3" class="form-control" placeholder="Descripción de la actividad realizada..."></textarea>
+                </div>
+              </div>
+
+              <div class="d-grid gap-2 mb-3">
+                <button class="btn btn-success" id="btnSave"><i class="bi bi-save me-1"></i>Guardar Actividad</button>
+                <button class="btn btn-outline-secondary" id="btnClear">Limpiar Formulario</button>
+              </div>
+
+              <hr />
+              <h6><i class="bi bi-graph-up me-1"></i> Estadísticas por tipo</h6>
+              <canvas id="typeChart" height="160"></canvas>
+
+              <!-- Panel de actividades del día seleccionado -->
+              <div id="dayActivitiesPanel" class="mt-3">
+                <div class="p-3 text-muted text-center">
+                  <i class="bi bi-calendar-day fs-2"></i><br>
+                  Selecciona una fecha en el calendario para ver las actividades
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Editar -->
+  <div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Editar actividad</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-2">
+            <label class="form-label" for="editTaskName">Nombre de la tarea</label>
+            <input type="text" id="editTaskName" class="form-control" />
+          </div>
+          <div class="mb-2">
+            <label class="form-label" for="editStartTime">Inicio</label>
+            <input type="time" id="editStartTime" class="form-control" />
+          </div>
+          <div class="mb-2">
+            <label class="form-label" for="editEndTime">Fin</label>
+            <input type="time" id="editEndTime" class="form-control" />
+          </div>
+          <div class="mb-2">
+            <label class="form-label" for="editActivityType">Tipo</label>
+            <select id="editActivityType" class="form-select">
+              <option value="desarrollo">Desarrollo</option>
+              <option value="reunion">Reunión</option>
+              <option value="documentacion">Documentación</option>
+              <option value="testing">Testing</option>
+              <option value="planificacion">Planificación</option>
+              <option value="capacitacion">Capacitación</option>
+              <option value="soporte">Soporte</option>
+              <option value="otro">Otro</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label class="form-label" for="editActivityDesc">Descripción</label>
+            <textarea id="editActivityDesc" class="form-control" rows="3"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="btnUpdate">Actualizar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Todas las actividades -->
+  <div class="modal fade" id="allModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Todas las actividades</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="table-responsive">
+            <table id="allActivitiesTable" class="table table-striped table-hover" style="width:100%"></table>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Historial de acciones -->
+  <div class="modal fade" id="historyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Historial de acciones</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="table-responsive">
+            <table id="historyTable" class="table table-sm table-striped align-middle mb-0">
+              <thead>
+                <tr>
+                  <th style="white-space:nowrap">Fecha y hora</th>
+                  <th>Acción</th>
+                  <th>Detalle</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button"="btn btn-outline-secondary btn-sm" id="btnExportHistoryJson"><i class="fa-solid fa-file-lines me-1"></i>Exportar JSON</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts base -->
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    // ===== Estado =====
+    let currentDate = new Date();
+    let selectedDate = null;
+    let activities = {}; // { 'YYYY-MM-DD': [ { ... } ] }
+    let editingId = null;
+
+    // Historial de acciones del usuario
+    let history = [];
+
+    const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const dayNames = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+    const typeMeta = {
+      desarrollo: {label:'Desarrollo', icon:'<i class="bi bi-code-slash"></i>', badge:'primary', color:'#4f46e5'},
+      reunion: {label:'Reunión', icon:'<i class="bi bi-people-fill"></i>', badge:'info', color:'#0ea5a4'},
+      documentacion: {label:'Documentación', icon:'<i class="bi bi-file-text"></i>', badge:'secondary', color:'#6b7280'},
+      testing: {label:'Testing', icon:'<i class="bi bi-bug-fill"></i>', badge:'warning text-dark', color:'#f59e0b'},
+      planificacion: {label:'Planificación', icon:'<i class="bi bi-calendar-check"></i>', badge:'dark', color:'#111827'},
+      capacitacion: {label:'Capacitación', icon:'<i class="bi bi-mortarboard-fill"></i>', badge:'success', color:'#16a34a'},
+      soporte: {label:'Soporte', icon:'<i class="bi bi-life-preserver"></i>', badge:'danger', color:'#dc2626'},
+      otro: {label:'Otro', icon:'<i class="bi bi-three-dots"></i>', badge:'muted', color:'#94a3b8'}
+    };
+
+    let typeChart = null;
+
+    // ===== Inicio =====
+    document.addEventListener('DOMContentLoaded', () => {
+      loadActivities();
+      loadHistory();
+      setTodayDate();
+      renderCalendar();
+      updateStats();
+      bindUI();
+      initChart();
+      refreshChart();
+      refreshDayActivitiesPanel(selectedDate);
+    });
+
+    function bindUI(){
+      document.getElementById('prevMonth').addEventListener('click', ()=>{ currentDate.setMonth(currentDate.getMonth()-1); renderCalendar(); });
+      document.getElementById('nextMonth').addEventListener('click', ()=>{ currentDate.setMonth(currentDate.getMonth()+1); renderCalendar(); });
+      document.getElementById('btnSave').addEventListener('click', saveActivity);
+      document.getElementById('btnClear').addEventListener('click', clearForm);
+      document.getElementById('btnViewAll').addEventListener('click', openAllModal);
+      document.getElementById('btnExportCsv').addEventListener('click', exportToCSV);
+      document.getElementById('btnExportXlsx').addEventListener('click', exportToExcel);
+      document.getElementById('btnExportJson').addEventListener('click', exportToJSON);
+      document.getElementById('btnImportJson').addEventListener('click', ()=>document.getElementById('fileJsonInput').click());
+      document.getElementById('fileJsonInput').addEventListener('change', handleJsonFile);
+      document.getElementById('btnUpdate').addEventListener('click', updateActivity);
+      document.getElementById('btnOpenHistory').addEventListener('click', openHistoryModal);
+      document.getElementById('btnExportHistoryJson').addEventListener('click', exportHistoryJSON);
+      document.getElementById('btnResetData').addEventListener('click', resetAllData);
+      document.getElementById('btnLoadSampleData').addEventListener('click', loadSampleData);
+      
+      // Auto-calcular horas al cambiar tiempo
+      document.getElementById('startTime').addEventListener('change', autoCalculateHours);
+      document.getElementById('endTime').addEventListener('change', autoCalculateHours);
+    }
+
+    // ===== Persistencia =====
+    function loadActivities(){ const stored = localStorage.getItem('workActivities'); if (stored) activities = JSON.parse(stored); }
+    function saveActivities(){ localStorage.setItem('workActivities', JSON.stringify(activities)); }
+
+    function loadHistory(){ const s = localStorage.getItem('workHistory'); history = s ? JSON.parse(s) : []; }
+    function saveHistory(){ localStorage.setItem('workHistory', JSON.stringify(history)); }
+
+    // ===== Reset y datos de ejemplo =====
+    function resetAllData(){
+      if(!confirm('¿Estás seguro de que quieres eliminar todos los datos? Esta acción no se puede deshacer.')) return;
+      activities = {};
+      history = [];
+      localStorage.removeItem('workActivities');
+      localStorage.removeItem('workHistory');
+      addHistory('RESET', 'Todos los datos fueron eliminados');
+      renderCalendar();
+      updateStats();
+      refreshChart();
+      refreshDayActivitiesPanel(null);
+      alert('Todos los datos han sido eliminados.');
+    }
+
+    function loadSampleData(){
+      if(!confirm('¿Cargar datos de ejemplo? Esto reemplazará los datos actuales.')) return;
+      
+      const today = new Date();
+      const sampleData = {};
+      
+      // Generar datos para los últimos 7 días
+      for(let i = 6; i >= 0; i--){
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
+        
+        sampleData[dateStr] = [];
+        
+        // Actividad de mañana
+        if(i % 2 === 0) {
+          sampleData[dateStr].push({
+            id: Date.now() + Math.random(),
+            taskName: `Desarrollo de módulo ${['login', 'reportes', 'usuarios', 'configuración'][i % 4]}`,
+            project: ['Sistema ERP', 'App Móvil', 'Portal Web'][i % 3],
+            assignee: ['Juan Pérez', 'María González', 'Carlos Rodriguez'][i % 3],
+            jira: `PROJ-${100 + i}`,
+            sprint: `Sprint ${12 + Math.floor(i/2)}`,
+            hoursWorked: 4,
+            progress: [25, 50, 75][i % 3],
+            startTime: '09:00',
+            endTime: '13:00',
+            type: 'desarrollo',
+            description: `Implementación de funcionalidades para ${['autenticación', 'visualización de datos', 'gestión de usuarios', 'parámetros del sistema'][i % 4]}`,
+            startDateTask: dateStr
+          });
+        }
+        
+        // Actividad de tarde
+        sampleData[dateStr].push({
+          id: Date.now() + Math.random() + 1,
+          taskName: `${['Testing de API', 'Reunión de equipo', 'Documentación técnica', 'Soporte a usuarios'][i % 4]}`,
+          project: ['API Backend', 'Portal Web', 'Sistema Facturación'][i % 3],
+          assignee: ['Ana Martínez', 'Luis Morales', 'Juan Pérez'][i % 3],
+          jira: `PROJ-${200 + i}`,
+          sprint: `Sprint ${12 + Math.floor(i/2)}`,
+          hoursWorked: 3,
+          progress: [50, 75, 100][i % 3],
+          startTime: '14:00',
+          endTime: '17:00',
+          type: ['testing', 'reunion', 'documentacion', 'soporte'][i % 4],
+          description: `${['Pruebas de endpoints y validación de responses', 'Revisión de progreso semanal y planificación', 'Creación de documentación para desarrolladores', 'Resolución de incidencias reportadas por usuarios'][i % 4]}`,
+          startDateTask: dateStr
+        });
+      }
+      
+      activities = sampleData;
+      saveActivities();
+      addHistory('CARGAR', 'Datos de ejemplo cargados (últimos 7 días)');
+      renderCalendar();
+      updateStats();
+      refreshChart();
+      refreshDayActivitiesPanel(selectedDate);
+      alert('Datos de ejemplo cargados exitosamente.');
+    }
+
+    // ===== Auto-cálculo de horas =====
+    function autoCalculateHours(){
+      const start = document.getElementById('startTime').value;
+      const end = document.getElementById('endTime').value;
+      if(start && end && start < end){
+        const duration = calculateDurationNumber(start, end);
+        document.getElementById('hoursWorked').value = duration;
+      }
+    }
+
+    // ===== Utilidades de fecha/hora =====
+    function nowISO(){ return new Date().toISOString(); }
+    function niceDateTime(iso){ const d=new Date(iso); return d.toLocaleString(); }
+
+    // ===== Selección inicial =====
+    function setTodayDate(){ 
+      const today = new Date(); 
+      const dateStr = today.toISOString().split('T')[0]; 
+      const inp = document.getElementById('activityDate'); 
+      if (inp) inp.value = dateStr; 
+      selectedDate = dateStr; 
+    }
+
+    // ===== Calendario mejorado =====
+    function renderCalendar(){
+      const calendar = document.getElementById('calendar');
+      const monthYear = document.getElementById('monthYear');
+      monthYear.textContent = `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+      calendar.innerHTML = '';
+
+      // Encabezados de día
+      dayNames.forEach(d => { const h = document.createElement('div'); h.className = 'day-header'; h.textContent = d; calendar.appendChild(h); });
+
+      const firstDay = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+      const startDate = new Date(firstDay); startDate.setDate(startDate.getDate() - firstDay.getDay());
+      const today = new Date();
+
+      for (let i = 0; i < 42; i++){
+        const cellDate = new Date(startDate); cellDate.setDate(startDate.getDate() + i);
+        const dateStr = cellDate.toISOString().split('T')[0];
+        const div = document.createElement('div'); 
+        div.className='day-cell';
+        div.dataset.date = dateStr;
+        
+        if (cellDate.getMonth() !== currentDate.getMonth()) div.classList.add('other-month');
+        if (cellDate.toDateString() === today.toDateString()) div.classList.add('today');
+        if (selectedDate === dateStr) div.classList.add('selected');
+        
+        const acts = activities[dateStr] || [];
+        if (acts.length > 0) div.classList.add('has-activity');
+
+        const number = document.createElement('div'); 
+        number.className='day-number'; 
+        number.textContent = cellDate.getDate(); 
+        div.appendChild(number);
+        
+        if (acts.length > 0) {
+          const totalHours = calculateDayHours(dateStr);
+          const summary = document.createElement('div');
+          summary.className = 'activity-summary';
+          summary.textContent = `${totalHours}h • ${acts.length} act`;
+          div.appendChild(summary);
+          
+          // Dots para indicar tipos de actividades
+          const dotsContainer = document.createElement('div');
+          dotsContainer.className = 'activity-dots';
+          const typesSeen = new Set();
+          acts.forEach(act => {
+            if (!typesSeen.has(act.type) && typesSeen.size < 6) {
+              const dot = document.createElement('div');
+              dot.className = 'activity-dot';
+              dot.style.backgroundColor = typeMeta[act.type]?.color || '#ccc';
+              dot.title = typeMeta[act.type]?.label || act.type;
+              dotsContainer.appendChild(dot);
+              typesSeen.add(act.type);
+            }
+          });
+          div.appendChild(dotsContainer);
+        }
+        
+        div.addEventListener('click', ()=>selectDate(dateStr, div));
+        calendar.appendChild(div);
+      }
+    }
+
+    function selectDate(dateStr, element){ 
+      document.querySelectorAll('.day-cell').forEach(c=>c.classList.remove('selected'));
+      element.classList.add('selected');
+      selectedDate = dateStr; 
+      const inp = document.getElementById('activityDate'); 
+      if (inp) inp.value = dateStr; 
+      refreshDayActivitiesPanel(dateStr); 
+    }
+
+    function calculateDayHours(dateStr){ 
+      if(!activities[dateStr]) return 0; 
+      let total = 0; 
+      activities[dateStr].forEach(a=>{ 
+        const duration = calculateDurationNumber(a.startTime, a.endTime);
+        total += duration;
+      }); 
+      return total.toFixed(1); 
+    }
+
+    function refreshDayActivitiesPanel(dateStr){
+      const panel = document.getElementById('dayActivitiesPanel');
+      if(!panel) return;
+      panel.innerHTML='';
+
+      if(!dateStr || !activities[dateStr] || activities[dateStr].length===0){
+        panel.innerHTML = `
+          <div class="text-center p-3">
+            <i class="bi bi-calendar-day fs-2 text-muted"></i>
+            <div class="text-muted mt-2">${dateStr ? `Sin actividades el ${formatDateNice(dateStr)}` : 'Selecciona una fecha para ver las actividades'}</div>
+          </div>`;
+        return;
+      }
+
+      const header = document.createElement('div');
+      header.className = 'border-bottom pb-2 mb-3';
+      header.innerHTML = `
+        <h6 class="mb-1"><i class="bi bi-calendar-day me-1"></i>Actividades del ${formatDateNice(dateStr)}</h6>
+        <small class="text-muted">${activities[dateStr].length} actividad${activities[dateStr].length > 1 ? 'es' : ''} • ${calculateDayHours(dateStr)} horas total</small>
+      `;
+      panel.appendChild(header);
+
+      activities[dateStr].forEach((act, idx)=>{
+        const card = document.createElement('div'); 
+        card.className = `card mb-2 activity-card ${act.type}`;
+        const body = document.createElement('div'); 
+        body.className='card-body p-2';
+        const meta = typeMeta[act.type] || {label:act.type, icon:'', badge:'secondary'};
+        const duration = calculateDurationNumber(act.startTime, act.endTime);
+        
+        body.innerHTML = `
+          <div class="d-flex justify-content-between align-items-start">
+            <div class="flex-grow-1">
+              <div class="fw-bold mb-1">${escapeHtml(act.taskName||'(sin nombre)')}</div>
+              <div class="small text-muted mb-1">
+                ${meta.icon} <span class="badge bg-${meta.badge} type-badge me-1">${meta.label}</span>
+                <i class="bi bi-clock me-1"></i>${act.startTime} - ${act.endTime} (${duration}h)
+                ${act.project ? `<br><i class="bi bi-folder me-1"></i>${escapeHtml(act.project)}` : ''}
+                ${act.jira ? `<br><i class="bi bi-link-45deg me-1"></i>${escapeHtml(act.jira)}` : ''}
+              </div>
+              ${act.description ? `<div class="small">${escapeHtml(act.description)}</div>` : ''}
+            </div>
+            <div class="text-end ms-2">
+              <button class="btn btn-sm btn-outline-warning me-1" onclick="editActivity('${dateStr}', ${idx})" title="Editar">
+                <i class="bi bi-pencil-square"></i>
+              </button>
+              <button class="btn btn-sm btn-outline-danger" onclick="deleteActivity('${dateStr}', ${idx})" title="Eliminar">
+                <i class="bi bi-trash"></i>
+              </button>
+            </div>
+          </div>`;
+        card.appendChild(body);
+        panel.appendChild(card);
+      });
+      
+      updateStats();
+    }
+
+    // ===== CRUD mejorado =====
+    function saveActivity(){
+      const date = document.getElementById('activityDate').value;
+      const start = document.getElementById('startTime').value;
+      const end = document.getElementById('endTime').value;
+      const type = document.getElementById('activityType').value || 'desarrollo';
+      const desc = document.getElementById('taskDescription').value.trim();
+      const taskName = document.getElementById('taskName').value.trim();
+      const project = document.getElementById('projectSearch').value;
+      const assignee = document.getElementById('assignee').value;
+      const jira = document.getElementById('jiraId').value.trim();
+      const sprint = document.getElementById('sprint').value.trim();
+      const progress = document.getElementById('progress').value;
+      const hoursWorked = document.getElementById('hoursWorked').value;
+      const startDateTask = document.getElementById('startDateTask').value;
+
+      if(!date || !start || !end || !taskName){ 
+        alert('Por favor completa: Fecha, Hora inicio, Hora fin y Nombre de la tarea'); 
+        return; 
+      }
+      if(start >= end){ 
+        alert('La hora de fin debe ser posterior a la hora de inicio'); 
+        return; 
+      }
+
+      // Validar solapamiento de horarios
+      if(activities[date]) {
+        const hasOverlap = activities[date].some(act => {
+          return (start < act.endTime && end > act.startTime);
+        });
+        if(hasOverlap && !confirm('Ya tienes una actividad en ese horario. ¿Continuar de todas formas?')) {
+          return;
+        }
+      }
+
+      if(!activities[date]) activities[date] = [];
+      const record = { 
+        id: Date.now() + Math.random(), 
+        taskName, 
+        project, 
+        assignee, 
+        jira, 
+        sprint, 
+        hoursWorked: Number(hoursWorked||0), 
+        progress, 
+        startTime: start, 
+        endTime: end, 
+        type, 
+        description: desc, 
+        startDateTask,
+        createdAt: nowISO()
+      };
+      
+      activities[date].push(record);
+      
+      // Ordenar actividades por hora de inicio
+      activities[date].sort((a, b) => a.startTime.localeCompare(b.startTime));
+      
+      saveActivities();
+
+      addHistory('CREAR', `(${date}) ${taskName} [${typeMeta[type]?.label||type}] ${start}-${end}`);
+
+      renderCalendar();
+      refreshDayActivitiesPanel(date);
+      clearForm();
+      refreshChart();
+      
+      // Mantener la fecha seleccionada
+      document.getElementById('activityDate').value = date;
+      
+      // Mostrar mensaje de éxito
+      showToast('Actividad guardada exitosamente', 'success');
+    }
+
+    function editActivity(date, idx){
+      const act = activities[date][idx];
+      editingId = { date, idx };
+      document.getElementById('editTaskName').value = act.taskName || '';
+      document.getElementById('editStartTime').value = act.startTime;
+      document.getElementById('editEndTime').value = act.endTime;
+      document.getElementById('editActivityType').value = act.type;
+      document.getElementById('editActivityDesc').value = act.description || '';
+      const modal = new bootstrap.Modal(document.getElementById('editModal'));
+      modal.show();
+    }
+
+    function updateActivity(){
+      if(!editingId) return;
+      const taskName = document.getElementById('editTaskName').value.trim();
+      const s = document.getElementById('editStartTime').value;
+      const e = document.getElementById('editEndTime').value;
+      const type = document.getElementById('editActivityType').value;
+      const desc = document.getElementById('editActivityDesc').value.trim();
+      
+      if(!taskName || !s || !e){ 
+        alert('Completa todos los campos requeridos'); 
+        return; 
+      }
+      if(s >= e){ 
+        alert('Hora fin debe ser posterior a hora inicio'); 
+        return; 
+      }
+      
+      const prev = activities[editingId.date][editingId.idx];
+      activities[editingId.date][editingId.idx] = { 
+        ...prev, 
+        taskName,
+        startTime: s, 
+        endTime: e, 
+        type, 
+        description: desc,
+        updatedAt: nowISO()
+      };
+      
+      // Reordenar por hora
+      activities[editingId.date].sort((a, b) => a.startTime.localeCompare(b.startTime));
+      
+      saveActivities();
+
+      addHistory('ACTUALIZAR', `(${editingId.date}) ${taskName} -> ${s}-${e} [${typeMeta[type]?.label||type}]`);
+
+      renderCalendar();
+      refreshDayActivitiesPanel(editingId.date);
+      const modalEl = document.getElementById('editModal');
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if(modal) modal.hide();
+      editingId = null;
+      refreshChart();
+      showToast('Actividad actualizada', 'success');
+    }
+
+    function deleteActivity(date, idx){
+      if(!confirm('¿Eliminar esta actividad?')) return;
+      const removed = activities[date][idx];
+      activities[date].splice(idx,1);
+      if(activities[date].length===0) delete activities[date];
+      saveActivities();
+
+      addHistory('ELIMINAR', `(${date}) ${removed?.taskName||''} ${removed?.startTime||''}-${removed?.endTime||''}`);
+
+      renderCalendar();
+      refreshDayActivitiesPanel(date);
+      refreshChart();
+      showToast('Actividad eliminada', 'warning');
+    }
+
+    function deleteFromAll(date, idx){
+      if(!confirm('¿Eliminar esta actividad?')) return;
+      const removed = activities[date][idx];
+      activities[date].splice(idx,1);
+      if(activities[date].length===0) delete activities[date];
+      saveActivities();
+      addHistory('ELIMINAR', `(${date}) ${removed?.taskName||''} ${removed?.startTime||''}-${removed?.endTime||''}`);
+      renderCalendar();
+      updateStats();
+      openAllModal();
+      if(selectedDate===date) refreshDayActivitiesPanel(date);
+      refreshChart();
+    }
+
+    function clearForm(){
+      document.getElementById('startTime').value='';
+      document.getElementById('endTime').value='';
+      document.getElementById('taskDescription').value='';
+      document.getElementById('taskName').value='';
+      document.getElementById('projectSearch').value='';
+      document.getElementById('jiraId').value='';
+      document.getElementById('sprint').value='';
+      document.getElementById('hoursWorked').value='';
+      document.getElementById('progress').value='0';
+      document.getElementById('startDateTask').value='';
+    }
+
+    // ===== Estadísticas mejoradas =====
+    function calculateDurationNumber(start,end){ 
+      const s=new Date(`2000-01-01T${start}`); 
+      const e=new Date(`2000-01-01T${end}`); 
+      const diff=(e-s)/(1000*60*60); 
+      return (isNaN(diff)||diff<=0) ? 0 : Number(diff.toFixed(2)); 
+    }
+
+    function updateStats(){
+      let totalHours = 0; 
+      let testingHours = 0;
+      let totalActivities = 0;
+      
+      Object.keys(activities).forEach(d=>{
+        if(activities[d].length > 0){
+          totalActivities += activities[d].length;
+          activities[d].forEach(a => {
+            const duration = calculateDurationNumber(a.startTime, a.endTime);
+            totalHours += duration;
+            if(a.type === 'testing') testingHours += duration;
+          });
+        }
+      });
+      
+      document.getElementById('totalHours').textContent = totalHours.toFixed(1);
+      document.getElementById('testingHours').textContent = testingHours.toFixed(1);
+      document.getElementById('totalActivities').textContent = totalActivities;
+      const pct = totalHours > 0 ? Math.round((testingHours/totalHours)*100) : 0;
+      document.getElementById('testingPct').textContent = pct + '%';
+    }
+
+    function initChart(){
+      const ctx = document.getElementById('typeChart').getContext('2d');
+      typeChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: { 
+          labels: [], 
+          datasets: [{ 
+            data: [], 
+            backgroundColor: [], 
+            hoverOffset: 6,
+            borderWidth: 2,
+            borderColor: '#fff'
+          }] 
+        },
+        options: { 
+          responsive: true,
+          plugins: { 
+            legend: { 
+              position: 'bottom',
+              labels: {
+                boxWidth: 12,
+                padding: 8,
+                font: { size: 11 }
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return context.label + ': ' + context.parsed + 'h';
+                }
+              }
+            }
+          } 
+        }
+      });
+    }
+
+    function refreshChart(){
+      const counts = {};
+      Object.keys(activities).forEach(d=>{
+        activities[d].forEach(a=>{
+          const duration = calculateDurationNumber(a.startTime, a.endTime);
+          counts[a.type] = (counts[a.type] || 0) + duration;
+        });
+      });
+      
+      const labels = Object.keys(counts).map(k => typeMeta[k] ? typeMeta[k].label : k);
+      const data = Object.keys(counts).map(k => parseFloat(counts[k].toFixed(2)));
+      const bg = Object.keys(counts).map(k => typeMeta[k]?.color || '#cccccc');
+      
+      typeChart.data.labels = labels; 
+      typeChart.data.datasets[0].data = data; 
+      typeChart.data.datasets[0].backgroundColor = bg; 
+      typeChart.update();
+    }
+
+    // ===== Exportaciones mejoradas =====
+    function flattenActivities(){ 
+      const rows = []; 
+      Object.keys(activities).sort().forEach(date => { 
+        activities[date].forEach(act => { 
+          const duration = calculateDurationNumber(act.startTime, act.endTime);
+          rows.push({ 
+            Fecha: date, 
+            Tarea: act.taskName || '', 
+            Proyecto: act.project || '', 
+            Asignado: act.assignee || '', 
+            JIRA: act.jira || '', 
+            Sprint: act.sprint || '', 
+            Inicio: act.startTime, 
+            Fin: act.endTime, 
+            'Horas Reales': duration,
+            'Horas Estimadas': act.hoursWorked || '', 
+            'Progreso %': act.progress || '',
+            Tipo: typeMeta[act.type]?.label || act.type,
+            Descripcion: act.description || '' 
+          }); 
+        }); 
+      }); 
+      return rows; 
+    }
+
+    function exportToCSV(){
+      const rows = flattenActivities(); 
+      if(!rows.length){ 
+        alert('No hay actividades para exportar'); 
+        return; 
+      }
+      const headers = Object.keys(rows[0]);
+      const csv = [headers.join(',')].concat(
+        rows.map(r => headers.map(h => `"${String(r[h]||'').replace(/"/g,'""')}"`).join(','))
+      ).join('\n');
+      const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); 
+      a.href = url; 
+      a.download = `bitacora_${new Date().toISOString().split('T')[0]}.csv`; 
+      document.body.appendChild(a); 
+      a.click();
+      setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },100);
+      addHistory('EXPORTAR', `CSV (bitacora_${new Date().toISOString().split('T')[0]}.csv)`);
+      showToast('Archivo CSV exportado', 'success');
+    }
+
+    function exportToExcel(){
+      const rows = flattenActivities(); 
+      if(!rows.length){ 
+        alert('No hay actividades para exportar'); 
+        return; 
+      }
+      const ws = XLSX.utils.json_to_sheet(rows); 
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Bitacora');
+      const filename = `bitacora_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      addHistory('EXPORTAR', `XLSX (${filename})`);
+      showToast('Archivo Excel exportado', 'success');
+    }
+
+    function exportToJSON(){
+      const data = JSON.stringify(activities, null, 2);
+      const blob = new Blob([data], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); 
+      a.href = url; 
+      a.download = `bitacora_${new Date().toISOString().split('T')[0]}.json`; 
+      document.body.appendChild(a); 
+      a.click();
+      setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },100);
+      addHistory('EXPORTAR', `JSON (bitacora_${new Date().toISOString().split('T')[0]}.json)`);
+      showToast('Archivo JSON exportado', 'success');
+    }
+
+    function handleJsonFile(e){
+      const f = e.target.files[0]; 
+      if(!f) return; 
+      const reader = new FileReader();
+      reader.onload = function(ev){
+        try{
+          const parsed = JSON.parse(ev.target.result);
+          if(typeof parsed !== 'object' || Array.isArray(parsed)){
+            if(!confirm('El JSON no tiene el formato esperado. ¿Importar como arreglo de filas?')) return;
+            importJsonArray(JSON.parse(ev.target.result));
+            return;
+          }
+          if(!confirm('La importación reemplazará los datos actuales. ¿Continuar?')) return;
+          activities = parsed; 
+          saveActivities(); 
+          renderCalendar(); 
+          updateStats(); 
+          refreshChart();
+          refreshDayActivitiesPanel(selectedDate);
+          addHistory('IMPORTAR', 'JSON (estructura por fecha)');
+          showToast('Importación completada exitosamente', 'success');
+        }catch(err){ 
+          alert('JSON inválido: '+err.message); 
+        }
+      };
+      reader.readAsText(f); 
+      e.target.value='';
+    }
+
+    function importJsonArray(arr){
+      const newAct = {};
+      arr.forEach(row=>{
+        const date = row.Fecha || row.date; 
+        const inicio = row.Inicio || row.inicio; 
+        const fin = row.Fin || row.fin; 
+        const tipo = row.TipoClave || row.Tipo || row.tipo || 'otro'; 
+        const desc = row.Descripcion || row.descripcion || ''; 
+        const tarea = row.Tarea || row.tarea || ''; 
+        const proyecto = row.Proyecto || row.proyecto || ''; 
+        const asignado = row.Asignado || row.asignado || ''; 
+        const jira = row.JIRA || row.jira || ''; 
+        const sprint = row.Sprint || row.sprint || ''; 
+        const prog = row.Progreso || row.progreso || ''; 
+        const horasTrab = row.HorasTrabajadas || row.horasTrabajadas || '';
+        
+        if(!date) return; 
+        if(!newAct[date]) newAct[date] = [];
+        newAct[date].push({ 
+          id: Date.now() + Math.random(), 
+          taskName: tarea, 
+          project: proyecto, 
+          assignee: asignado, 
+          jira: jira, 
+          sprint: sprint, 
+          hoursWorked: Number(horasTrab) || 0, 
+          progress: prog, 
+          startTime: inicio || '00:00', 
+          endTime: fin || inicio || '00:00', 
+          type: tipo, 
+          description: desc 
+        });
+      });
+      if(!confirm('La importación como array reemplazará los datos actuales. ¿Continuar?')) return;
+      activities = newAct; 
+      saveActivities(); 
+      renderCalendar(); 
+      updateStats(); 
+      refreshChart();
+      refreshDayActivitiesPanel(selectedDate);
+      addHistory('IMPORTAR', 'JSON (filas)');
+      showToast('Importación completada', 'success');
+    }
+
+    // ===== Vista "Todas las actividades" mejorada =====
+    function openAllModal(){
+      const rows = flattenActivities();
+      if(!rows.length){
+        document.getElementById('allActivitiesTable').innerHTML = '<div class="text-muted p-4 text-center"><i class="bi bi-inbox fs-1"></i><br>No hay actividades registradas.</div>';
+        const modal = new bootstrap.Modal(document.getElementById('allModal')); 
+        modal.show();
+        return;
+      }
+      
+      let html = `
+        <thead>
+          <tr>
+            <th>Fecha</th><th>Tarea</th><th>Proyecto</th><th>Tipo</th><th>Horario</th>
+            <th>Horas</th><th>Progreso</th><th>Descripción</th><th>Acciones</th>
+          </tr>
+        </thead><tbody>`;
+        
+      Object.keys(activities).sort((a,b) => b.localeCompare(a)).forEach(date=>{
+        activities[date].forEach((act, idx)=>{
+          const duration = calculateDurationNumber(act.startTime, act.endTime);
+          const typeMeta_ = typeMeta[act.type] || {label: act.type, badge: 'secondary'};
+          html += `
+            <tr>
+              <td style="white-space:nowrap">${formatDateNice(date)}</td>
+              <td><strong>${escapeHtml(act.taskName||'')}</strong><br>
+                  <small class="text-muted">${escapeHtml(act.jira||'')} • ${escapeHtml(act.assignee||'')}</small></td>
+              <td>${escapeHtml(act.project||'')}</td>
+              <td><span class="badge bg-${typeMeta_.badge} type-badge">${typeMeta_.label}</span></td>
+              <td style="white-space:nowrap">${act.startTime} - ${act.endTime}</td>
+              <td>${duration}h</td>
+              <td>${act.progress ? act.progress + '%' : ''}</td>
+              <td><small>${escapeHtml(act.description||'').substring(0,50)}${act.description && act.description.length > 50 ? '...' : ''}</small></td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-sm btn-outline-warning me-1" onclick="editActivity('${date}', ${idx});" title="Editar">
+                  <i class="bi bi-pencil-square"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteFromAll('${date}', ${idx});" title="Eliminar">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </td>
+            </tr>`;
+        });
+      });
+      html += `</tbody>`;
+      
+      $('#allActivitiesTable').html(html);
+      $('#allActivitiesTable').DataTable({ 
+        destroy: true, 
+        paging: true, 
+        searching: true, 
+        info: true, 
+        order: [[0, 'desc']],
+        pageLength: 25,
+        language: {
+          search: "Buscar:",
+          lengthMenu: "Mostrar _MENU_ entradas",
+          info: "Mostrando _START_ a _END_ de _TOTAL_ entradas",
+          paginate: {
+            previous: "Anterior",
+            next: "Siguiente"
+          },
+          emptyTable: "No hay datos disponibles"
+        }
+      });
+      
+      const modal = new bootstrap.Modal(document.getElementById('allModal')); 
+      modal.show();
+    }
+
+    // ===== Historial =====
+    function addHistory(action, detail){ 
+      history.unshift({ ts: nowISO(), action, detail }); 
+      // Mantener solo los últimos 100 registros
+      if(history.length > 100) history = history.slice(0, 100);
+      saveHistory(); 
+    }
+
+    function openHistoryModal(){
+      const tbody = document.querySelector('#historyTable tbody');
+      tbody.innerHTML = history.length ? '' : '<tr><td colspan="3" class="text-muted">Sin movimientos todavía</td></tr>';
+      history.forEach(item=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="white-space:nowrap">${niceDateTime(item.ts)}</td>
+          <td><span class="badge text-bg-light">${item.action}</span></td>
+          <td>${escapeHtml(item.detail||'')}</td>`;
+        tbody.appendChild(tr);
+      });
+      const modal = new bootstrap.Modal(document.getElementById('historyModal')); 
+      modal.show();
+    }
+
+    function exportHistoryJSON(){
+      const data = JSON.stringify(history, null, 2);
+      const blob = new Blob([data], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); 
+      a.href = url; 
+      a.download = `historial_bitacora_${new Date().toISOString().split('T')[0]}.json`; 
+      document.body.appendChild(a); 
+      a.click();
+      setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 100);
+      addHistory('EXPORTAR', 'Historial JSON');
+    }
+
+    // ===== Utilidades =====
+    function escapeHtml(u){ 
+      return String(u).replace(/[&<>\"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s] || s)); 
+    }
+
+    function formatDateNice(dateStr) {
+      const date = new Date(dateStr + 'T00:00:00');
+      return date.toLocaleDateString('es-ES', { 
+        weekday: 'short', 
+        day: 'numeric', 
+        month: 'short' 
+      });
+    }
+
+    function showToast(message, type = 'info') {
+      // Simple toast notification
+      const toast = document.createElement('div');
+      toast.className = `alert alert-${type} position-fixed`;
+      toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 250px;';
+      toast.innerHTML = `
+        <div class="d-flex align-items-center">
+          <i class="bi bi-${type === 'success' ? 'check-circle' : type === 'warning' ? 'exclamation-triangle' : 'info-circle'} me-2"></i>
+          ${message}
+          <button type="button" class="btn-close ms-auto" onclick="this.parentElement.parentElement.remove()"></button>
+        </div>`;
+      document.body.appendChild(toast);
+      setTimeout(() => {
+        if (toast.parentElement) toast.remove();
+      }, 5000);
+    }
+  </script>
+</body>
+</html>
